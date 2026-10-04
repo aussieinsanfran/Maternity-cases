@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Clinical Rounds: The Maternity Shift</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: a night-unit workstation — census board on the left, the open chart on the right; vitals read like a bedside monitor. Committed single dark look. */
+:root{
+  --night:#0e1522; --panel:#162033; --panel-2:#1c2840; --line:#2b3b58;
+  --text:#e6ecf5; --muted:#97a6bf; --lamp:#f0b450; --lamp-ink:#1d1606;
+  --ok:#57d19c; --warn:#ff9f5a; --crit:#ff6b6b;
+  --hr:#5fe08c; --spo2:#5cc8ff; --bp:#ff8a8a; --rr:#f5d76e; --temp:#c9a4ff;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r:10px;
+  color-scheme:dark;
+}
+html,body{background:var(--night);color:var(--text);margin:0}
+body{font-family:var(--f-body);font-size:15px;line-height:1.55;padding-inline:16px;padding-block:0 40px}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--night);border-bottom:1px solid var(--line);
+  display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding-block:14px;margin-inline:-16px;padding-inline:16px}
+.brand{display:flex;flex-direction:column;gap:0;min-width:0}
+.brand small{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.brand h1{font-family:var(--f-display);font-weight:700;font-size:clamp(20px,3.2vw,28px);margin:0;line-height:1.1;text-wrap:balance}
+.brand h1 span{color:var(--lamp)}
+.hud{display:flex;gap:18px;margin-left:auto;flex-wrap:wrap}
+.hud div{display:flex;flex-direction:column}
+.hud label{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.hud b{font-family:var(--f-mono);font-size:20px;font-variant-numeric:tabular-nums;font-weight:600}
+.hud .clock b{color:var(--lamp)}
+
+.wrap{display:grid;grid-template-columns:270px minmax(0,1fr);gap:20px;max-width:1180px;margin:20px auto 0}
+@media (max-width:820px){.wrap{grid-template-columns:minmax(0,1fr)}}
+
+/* Census */
+.census{display:flex;flex-direction:column;gap:8px;align-self:start;position:sticky;top:calc(env(safe-area-inset-top,0px) + 86px)}
+.census h2{font-family:var(--f-display);font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 4px;font-weight:500}
+.census p.hint{margin:0 0 6px;color:var(--muted);font-size:13px}
+.rooms{display:flex;flex-direction:column;gap:6px}
+@media (max-width:820px){
+  .census{position:static}
+  .rooms{flex-direction:row;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
+  .room{min-width:190px;scroll-snap-align:start}
+}
+.room{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:10px;text-align:left;
+  background:transparent;border:1px solid var(--line);border-radius:var(--r);padding:9px 10px;cursor:pointer}
+.room:hover{background:var(--panel)}
+.room[aria-current="true"]{background:var(--panel-2);border-color:var(--lamp)}
+.room .num{font-family:var(--f-mono);font-weight:600;color:var(--lamp);font-size:13px}
+.room .who{min-width:0}
+.room .who b{display:block;font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room .who span{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--muted)}
+.dot.prog{border-color:var(--lamp);background:transparent;box-shadow:inset 0 0 0 2px var(--night),inset 0 0 0 6px var(--lamp)}
+.dot.s3{background:var(--ok);border-color:var(--ok)}
+.dot.s2{background:var(--lamp);border-color:var(--lamp)}
+.dot.s1,.dot.s0{background:var(--crit);border-color:var(--crit)}
+.reportbtn{margin-top:8px;background:var(--lamp);color:var(--lamp-ink);border:0;border-radius:var(--r);padding:10px 12px;font-weight:600;cursor:pointer}
+.reportbtn:disabled{background:var(--panel-2);color:var(--muted);cursor:not-allowed}
+
+/* Chart */
+.chart{min-width:0;display:flex;flex-direction:column;gap:16px}
+.pt-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+.pt-head .rm{font-family:var(--f-mono);color:var(--lamp);font-size:14px;letter-spacing:.06em}
+.pt-head h2{font-family:var(--f-display);font-size:clamp(24px,3.6vw,34px);margin:0;line-height:1.1;font-weight:700;text-wrap:balance}
+.pt-head .dx{color:var(--muted);flex-basis:100%;font-size:15px}
+
+.monitor{background:#060a12;border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px 14px}
+@media (max-width:620px){.monitor{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.vital label{display:block;font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;opacity:.85}
+.vital b{display:block;font-family:var(--f-mono);font-size:clamp(20px,3vw,28px);font-weight:600;font-variant-numeric:tabular-nums;line-height:1.15}
+.vital small{font-family:var(--f-mono);font-size:11px;opacity:.75}
+.v-hr{color:var(--hr)} .v-bp{color:var(--bp)} .v-spo2{color:var(--spo2)} .v-rr{color:var(--rr)} .v-t{color:var(--temp)}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px}
+@media (max-width:700px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;min-width:0}
+.box h3{margin:0 0 8px;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.sbar{display:grid;grid-template-columns:22px minmax(0,1fr);gap:4px 10px;margin:0}
+.sbar dt{font-family:var(--f-mono);font-weight:600;color:var(--lamp)}
+.sbar dd{margin:0 0 6px}
+.labs{width:100%;border-collapse:collapse;font-size:14px}
+.labs td{padding:4px 0;border-bottom:1px solid var(--line)}
+.labs td:last-child{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.labs tr.flag td:last-child{color:var(--warn);font-weight:600}
+.labs tr.flag td:last-child::after{content:" ▲"}
+.labs tr.flag.lo td:last-child::after{content:" ▼"}
+.meds{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;font-size:14px}
+.meds li{padding-left:14px;position:relative}
+.meds li::before{content:"";position:absolute;left:0;top:.62em;width:6px;height:6px;border-radius:1px;background:var(--muted)}
+
+/* Stability */
+.stab{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.stab .bar{flex:1 1 220px;height:12px;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);overflow:hidden}
+.stab .fill{height:100%;border-radius:6px;transition:width .6s ease,background-color .6s ease}
+.stab .lbl{font-family:var(--f-mono);font-size:13px;font-variant-numeric:tabular-nums;min-width:4ch}
+.pill{display:inline-block;font-size:12px;font-weight:600;letter-spacing:.04em;padding:3px 10px;border-radius:999px;border:1px solid currentColor}
+.pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.crit{color:var(--crit)} .pill.mute{color:var(--muted)}
+
+/* Questions */
+.q{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.q .meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.q .tag{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--lamp);font-weight:600}
+.q .step{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.q .time{font-family:var(--f-mono);font-size:12px;color:var(--muted);margin-left:auto}
+.q p.stem{margin:0 0 12px;font-size:16px;max-width:68ch}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt{display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;align-items:start;text-align:left;cursor:pointer;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.opt:hover:not(:disabled){border-color:var(--lamp)}
+.opt:disabled{cursor:default}
+.opt .k{font-family:var(--f-mono);font-weight:600;width:24px;height:24px;border-radius:6px;display:grid;place-items:center;border:1px solid var(--line);font-size:13px}
+.opt.right{border-color:var(--ok)} .opt.right .k{background:var(--ok);color:var(--night);border-color:var(--ok)}
+.opt.wrong{border-color:var(--crit)} .opt.wrong .k{background:var(--crit);color:var(--night);border-color:var(--crit)}
+.opt.dim{opacity:.55}
+.why{margin-top:12px;border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:8px}
+.why p{margin:0;max-width:72ch}
+.why .verdict{font-weight:600}
+.why .verdict.ok{color:var(--ok)} .why .verdict.bad{color:var(--crit)}
+.done-q{opacity:.82}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--panel-2);border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:500}
+.btn.primary{background:var(--lamp);color:var(--lamp-ink);border-color:var(--lamp);font-weight:600}
+.btn:hover{filter:brightness(1.08)}
+
+.outcome{display:flex;flex-direction:column;gap:6px;border-left:3px solid var(--line);padding:4px 0 4px 14px}
+.outcome.ok{border-color:var(--ok)} .outcome.warn{border-color:var(--warn)} .outcome.crit{border-color:var(--crit)}
+.outcome h3{margin:0;font-family:var(--f-display);font-size:20px}
+.outcome p{margin:0;color:var(--muted);max-width:70ch}
+
+/* Report */
+.report h2{font-family:var(--f-display);font-size:clamp(26px,4vw,36px);margin:0}
+.report .sub{color:var(--muted);margin:4px 0 0}
+.cats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:620px){.cats{grid-template-columns:minmax(0,1fr)}}
+.cat b{font-family:var(--f-mono);font-size:28px;font-variant-numeric:tabular-nums;display:block}
+.cat span{color:var(--muted);font-size:13px}
+.tbl-wrap{overflow-x:auto}
+.rtbl{width:100%;border-collapse:collapse;font-size:14px;min-width:520px}
+.rtbl th{text-align:left;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+.rtbl td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+.rtbl td.n{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.review{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.field{display:flex;flex-direction:column;gap:4px;max-width:360px}
+.field label{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.field input{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:9px 10px;color:var(--text);font:inherit}
+textarea.copytext{width:100%;min-height:180px;background:#060a12;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:var(--f-mono);font-size:12.5px}
+.note{color:var(--muted);font-size:13px;max-width:75ch}
+.toast{font-size:13px;color:var(--ok)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand"><small>Maternity 5 East · Night shift</small><h1>Clinical Rounds: <span>The Maternity Shift</span></h1></div>
+  <div class="hud">
+    <div class="clock"><label>Unit clock</label><b id="clock">19:00</b></div>
+    <div><label>Patients seen</label><b id="seen">0/10</b></div>
+    <div><label>Score</label><b id="score">0/30</b></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <aside class="census" aria-label="Unit census">
+    <h2>Census</h2>
+    <p class="hint">Seven rooms in Labor &amp; Delivery and three on Postpartum tonight. Ten patients, three decisions each.</p>
+    <div class="rooms" id="rooms"></div>
+    <button class="reportbtn" id="reportBtn" disabled>End-of-shift report</button>
+    <button class="btn" id="resetBtn" style="margin-top:2px">Start a new shift</button>
+  </aside>
+  <main class="chart" id="chart" aria-live="polite"></main>
+</div>
+
+<script>
+const CASES = [
+{id:"501",unit:"Labor & Delivery",name:"Tanya Brooks",age:29,sex:"F",dx:"G3P2 at 35 weeks, suspected placental abruption",
+ s:"Sudden constant abdominal pain and dark red bleeding after a car accident this evening.",
+ b:"Chronic hypertension, smokes half a pack a day. Rh positive. Seatbelt worn.",
+ a:"Uterus firm, tender and boardlike between contractions. Moderate dark red bleeding. Frequent small contractions.",
+ r:"Two large-bore IVs placed, type and crossmatch sent. Provider on the way.",
+ mon:[["FHR","170","minimal variability","hr"],["DECELS","late","recurrent","bp"],["UC","8","per 10 min, low amplitude","rr"],["BP","104/66","mmHg (baseline 148/94)","spo2"],["MHR","118","bpm","temp"]],
+ labs:[["Hemoglobin","9.1 g/dL","lo"],["Fibrinogen","140 mg/dL","lo"],["Platelets","96 ×10³/µL","lo"],["PT / INR","15.8 s / 1.4","hi"],["Urine drug screen","negative",""]],
+ meds:["Lactated Ringer's wide open per order","Packed red cells 2 units crossmatched","Cryoprecipitate and FFP available","Emergency cesarean consent pending"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Placental abruption: concealed bleeding and fetal hypoxia",
+   stem:"What is happening, and why is her blood pressure low compared with her baseline?",
+   o:["Placenta previa is bleeding painlessly.",
+      "The placenta is separating from the uterine wall; bleeding behind it is partly concealed, so blood loss is greater than what she's passing and the fetus loses its oxygen supply.",
+      "She's having normal labor with bloody show.",
+      "Her uterus has ruptured along an old scar."],
+   c:1,why:"Abruption is premature separation of a normally implanted placenta. Blood collects between the placenta and the uterine wall, causing pain, a rigid uterus and irritable contractions. Visible bleeding underestimates the loss, so a 'normal' BP of 104/66 in a woman with chronic hypertension and a heart rate of 118 signals hypovolemia. Trauma, hypertension and smoking are risk factors."},
+  {cat:"Prioritization & Safety",topic:"Emergency response to abruption",
+   stem:"Late decelerations, fetal tachycardia and minimal variability. What is the priority?",
+   o:["Perform a vaginal exam to check dilation.",
+      "Keep her on her left side, continue fluid resuscitation and continuous monitoring, have blood ready, and prepare for emergency cesarean birth.",
+      "Start oxytocin to speed up labor.",
+      "Send her for an ultrasound and recheck in an hour."],
+   c:1,why:"This fetal tracing shows the fetus isn't tolerating the loss of placental surface. Lateral positioning improves venous return, and fluids and blood replace loss. With a non-reassuring tracing and an unstable mother, the expected plan is emergency cesarean birth. Oxytocin would increase uterine activity and worsen fetal hypoxia."},
+  {cat:"Pharmacology",topic:"DIC in abruption: replacing fibrinogen",
+   stem:"Fibrinogen is 140 mg/dL and her IV sites are oozing. Which blood product most directly replaces fibrinogen?",
+   o:["Packed red blood cells", "Platelets", "Cryoprecipitate", "Albumin"],
+   c:2,why:"Abruption releases tissue thromboplastin into the maternal circulation and consumes clotting factors, which can trigger DIC. A fibrinogen below 200 mg/dL in pregnancy is a red flag. Cryoprecipitate is rich in fibrinogen, factor VIII and von Willebrand factor. Red cells restore oxygen-carrying capacity but no clotting factors."}
+ ]},
+{id:"502",unit:"Labor & Delivery",name:"Lin Zhao",age:36,sex:"F",dx:"G4P3 at 32 weeks, placenta previa",
+ s:"Woke up in a pool of bright red blood; no pain.",
+ b:"Two previous cesareans. Complete previa seen on ultrasound at 20 weeks. Betamethasone course completed last week.",
+ a:"Bright red bleeding, now slowing. Uterus soft and nontender. No contractions felt.",
+ r:"Bleeding has eased. A new resident is about to check her cervix.",
+ mon:[["FHR","145","moderate variability","hr"],["DECELS","none","","bp"],["UC","0","per 10 min","rr"],["BP","112/70","mmHg","spo2"],["MHR","96","bpm","temp"]],
+ labs:[["Hemoglobin","10.2 g/dL","lo"],["Blood type","A positive",""],["Ultrasound","complete previa, possible accreta","hi"]],
+ meds:["Two large-bore IVs","Type and crossmatch 4 units","Pelvic rest","Planned cesarean at 36–37 weeks if stable"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Why placenta previa bleeds without pain",
+   stem:"Why is her bleeding bright red and painless?",
+   o:["The placenta is separating behind the uterine wall.",
+      "The placenta covers the cervical os; as the lower uterine segment stretches and thins, placental vessels tear, and fresh blood flows straight out without uterine irritation.",
+      "She has a cervical infection.",
+      "It's a normal sign of approaching labor."],
+   c:1,why:"In previa, the placenta implants over or near the internal os. The lower segment stretches and the cervix changes in the third trimester, tearing the anchoring vessels. Blood escapes directly, so it's bright red, and the uterus stays soft because no blood is trapped. Prior cesareans raise the risk of both previa and placenta accreta."},
+  {cat:"Prioritization & Safety",topic:"No digital vaginal exam with previa",
+   stem:"The resident is gloving up to check her cervix. What do you do?",
+   o:["Help position her for the exam.",
+      "Stop the exam: no digital vaginal exams with a known previa, because a finger through the cervix can trigger massive hemorrhage.",
+      "Suggest a gentle exam with extra lubricant.",
+      "Let the resident proceed since the bleeding has slowed."],
+   c:1,why:"A digital exam can puncture or disrupt the placenta lying over the os and cause catastrophic bleeding. Placental location is assessed by ultrasound. Speaking up immediately is a patient-safety duty, whoever is performing the exam."},
+  {cat:"Prioritization & Safety",topic:"Pelvic rest teaching for previa",
+   stem:"If she's stable enough for discharge later, which statement shows she understands her precautions?",
+   o:["\"I can use tampons for the light bleeding.\"",
+      "\"Nothing goes in the vagina, no intercourse or tampons, and I'll come in right away for any bleeding or contractions.\"",
+      "\"I should exercise more to get ready for birth.\"",
+      "\"A little bleeding is normal now, so I'll wait and see.\""],
+   c:1,why:"Pelvic rest (no intercourse, tampons or douching) avoids disturbing the placenta. Any new bleeding needs immediate evaluation because previa bleeding can recur suddenly and heavily. Many people with significant bleeding stay in the hospital until a planned cesarean birth."}
+ ]},
+{id:"503",unit:"Labor & Delivery",name:"Destiny Harris",age:22,sex:"F",dx:"G1 at 30 weeks, preterm labor",
+ s:"Tightening every 5 minutes and a dull low backache since this afternoon.",
+ b:"Burning with urination for a week, not treated. No prenatal visits since 20 weeks.",
+ a:"Contractions every 4–5 minutes. Cervix 2 cm, 70% effaced. Membranes intact.",
+ r:"Nifedipine, betamethasone and magnesium for neuroprotection ordered. Urine culture sent.",
+ mon:[["FHR","150","moderate variability","hr"],["DECELS","none","","bp"],["UC","3","per 10 min","rr"],["BP","118/72","mmHg","spo2"],["MHR","92","bpm","temp"]],
+ labs:[["Urinalysis","nitrites +, leukocyte esterase +","hi"],["Fetal fibronectin","positive","hi"],["GBS","unknown",""],["WBC","13.4 ×10³/µL","hi"]],
+ meds:["Nifedipine 20 mg PO, then per protocol","Betamethasone 12 mg IM, repeat in 24 h","Magnesium sulfate for fetal neuroprotection","Penicillin G IV for unknown GBS status","Cephalexin PO for UTI"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Infection as a trigger for preterm labor",
+   stem:"How can an untreated urinary tract infection lead to preterm labor?",
+   o:["Bacteria directly infect the fetus and start labor.",
+      "Infection triggers inflammatory cytokines and prostaglandins, which stimulate uterine contractions and cervical change.",
+      "The full bladder presses on the uterus.",
+      "Antibiotics cause the contractions."],
+   c:1,why:"Maternal infection, including UTI and asymptomatic bacteriuria, releases inflammatory mediators that increase prostaglandin production. Prostaglandins ripen the cervix and stimulate the myometrium. That's why pregnant people are screened and treated for bacteriuria."},
+  {cat:"Pharmacology",topic:"Antenatal corticosteroids",
+   stem:"Destiny asks why she's getting a steroid shot. What do you explain?",
+   o:["\"It stops your contractions.\"",
+      "\"It speeds up the baby's lung development and lowers the risk of brain bleeding and bowel problems if the baby is born early. The full effect needs two doses 24 hours apart.\"",
+      "\"It treats your bladder infection.\"",
+      "\"It's to raise your blood sugar for labor.\""],
+   c:1,why:"Betamethasone crosses the placenta and stimulates surfactant production in the fetal lungs, reducing respiratory distress syndrome, intraventricular hemorrhage and necrotizing enterocolitis. Benefit is greatest when birth is at least 24 hours after the first dose. Tocolytics like nifedipine are used mainly to buy time for the steroid course."},
+  {cat:"Pharmacology",topic:"Nifedipine tocolysis monitoring",
+   stem:"An hour after nifedipine her BP is 86/48, HR 118, and she has a headache. What do you do?",
+   o:["Give the next nifedipine dose on schedule.",
+      "Hold the next dose, position her on her side, and notify the provider about the hypotension and tachycardia.",
+      "Give it with a glass of grapefruit juice to help absorption.",
+      "Double the magnesium to slow her heart rate."],
+   c:1,why:"Nifedipine is a calcium channel blocker that relaxes uterine muscle but also dilates blood vessels, causing hypotension, reflex tachycardia, flushing and headache. Low maternal BP reduces placental perfusion. Hold and report it. Grapefruit juice raises nifedipine levels, and combining it with magnesium can deepen hypotension."}
+ ]},
+{id:"504",unit:"Labor & Delivery",name:"Jessica Morgan",age:34,sex:"F",dx:"G2P1 at 40 weeks, shoulder dystocia",
+ s:"Pushing for 2 hours. The baby's head just delivered.",
+ b:"Gestational diabetes on insulin. Estimated fetal weight 4.4 kg. Epidural in place.",
+ a:"The head delivered, then pulled back tight against the perineum (turtle sign). The next push doesn't deliver the shoulders.",
+ r:"Provider at the perineum calls \"shoulder dystocia.\" Clock started.",
+ mon:[["FHR","100","bradycardia","hr"],["HEAD","delivered","00:45 ago","bp"],["UC","4","per 10 min","rr"],["BP","132/84","mmHg","spo2"],["MHR","110","bpm","temp"]],
+ labs:[["Glucose (maternal)","112 mg/dL",""],["Estimated fetal weight","4.4 kg","hi"]],
+ meds:["Insulin infusion (stopped at full dilation)","Oxytocin ready for third stage","Neonatal resuscitation team called"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Mechanism of shoulder dystocia",
+   stem:"What is preventing the shoulders from delivering?",
+   o:["The cord is wrapped around the baby's neck.",
+      "The baby's anterior shoulder is caught behind the mother's pubic symphysis.",
+      "The cervix has closed around the neck.",
+      "The epidural has stopped the contractions."],
+   c:1,why:"In shoulder dystocia the anterior shoulder impacts behind the pubic symphysis after the head delivers. Fetal macrosomia, especially with diabetes, is the strongest risk factor because the shoulders and trunk grow larger relative to the head. The turtle sign is the classic warning."},
+  {cat:"Prioritization & Safety",topic:"McRoberts maneuver and suprapubic pressure",
+   stem:"What should you do?",
+   o:["Apply strong fundal pressure to push the baby out.",
+      "Call for help and assist with McRoberts maneuver, sharply flexing her thighs toward her abdomen, then apply suprapubic pressure as directed.",
+      "Have her stop pushing and wait for the next contraction.",
+      "Pull firmly on the baby's head."],
+   c:1,why:"McRoberts flattens the sacrum and rotates the symphysis, freeing the shoulder in many cases. Suprapubic pressure, applied just above the pubic bone toward the baby's face, dislodges the anterior shoulder. Fundal pressure drives the shoulder harder against the bone and raises the risk of injury and uterine rupture. Note the times of each maneuver for documentation."},
+  {cat:"Prioritization & Safety",topic:"Newborn assessment after shoulder dystocia",
+   stem:"The baby is delivered. Which newborn finding should you look for specifically?",
+   o:["Cleft palate",
+      "A limp arm held at the side with an asymmetric Moro reflex, suggesting brachial plexus (Erb) palsy, or crepitus over the clavicle",
+      "Jaundice in the first hour",
+      "Extra digits"],
+   c:1,why:"Traction during a dystocia can stretch the brachial plexus (C5–C6), giving an arm that lies extended and internally rotated with an absent Moro on that side. Clavicle fracture is common too. Both need gentle handling and pediatric evaluation. Watch for hypoglycemia as well, since the mother had diabetes."}
+ ]},
+{id:"505",unit:"Labor & Delivery",name:"Keiko Yamamoto",age:27,sex:"F",dx:"G1 at 38 weeks, umbilical cord prolapse",
+ s:"Membranes just ruptured during a cervical exam; she says \"something is there.\"",
+ b:"Fetus at −3 station (high). Polyhydramnios noted last week.",
+ a:"A loop of umbilical cord is visible at the introitus and is pulsating. Cervix 5 cm.",
+ r:"You are alone in the room. FHR dropped as the fluid came out.",
+ mon:[["FHR","80","prolonged decel","hr"],["DECELS","prolonged","since ROM","bp"],["UC","3","per 10 min","rr"],["BP","120/76","mmHg","spo2"],["MHR","98","bpm","temp"]],
+ labs:[["Fetal presentation","vertex, −3 station","hi"],["Amniotic fluid","clear, large volume",""]],
+ meds:["Terbutaline 0.25 mg subcut PRN (to reduce contractions)","Emergency cesarean setup","Warm sterile saline"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Why cord prolapse causes fetal bradycardia",
+   stem:"Why did the fetal heart rate drop?",
+   o:["The baby is sleeping.",
+      "The presenting part is compressing the prolapsed cord, blocking blood flow and oxygen to the fetus.",
+      "Maternal hypotension from the exam",
+      "Normal head compression"],
+   c:1,why:"When membranes rupture with the presenting part still high, the cord can be swept down ahead of it. The fetal head then squeezes the cord against the pelvis, occluding the umbilical vessels. Exposure to cold air also triggers vasospasm. Polyhydramnios and an unengaged presenting part are risk factors."},
+  {cat:"Prioritization & Safety",topic:"Relieving cord compression",
+   stem:"What is your immediate action?",
+   o:["Push the cord back into the uterus.",
+      "Call for help, use a gloved hand to lift the presenting part off the cord, and place her in knee-chest or steep Trendelenburg while the team prepares for cesarean birth.",
+      "Have her push to deliver quickly.",
+      "Leave to get the provider."],
+   c:1,why:"Relieving pressure on the cord restores blood flow. Keep your hand in place, elevating the presenting part, until the baby is delivered, usually by emergency cesarean. Positioning uses gravity to shift the fetus off the cord. Don't leave the patient, and don't try to replace the cord."},
+  {cat:"Prioritization & Safety",topic:"Caring for an exposed cord",
+   stem:"While the OR is prepared, how should the exposed cord be handled?",
+   o:["Handle it frequently to check for a pulse.",
+      "Cover it with sterile gauze moistened with warm saline and avoid handling it.",
+      "Tuck it back into the vagina.",
+      "Leave it exposed to air."],
+   c:1,why:"Handling and cooling the cord cause the umbilical vessels to spasm, further reducing blood flow. Warm, moist gauze protects it. Fetal status is followed on the monitor rather than by palpating the cord. Terbutaline may be ordered to reduce contractions and pressure on the cord."}
+ ]},
+{id:"506",unit:"Labor & Delivery",name:"Priya Nair",age:31,sex:"F",dx:"G2P1 at 39 weeks, hypotension after epidural",
+ s:"Feels lightheaded and nauseated 15 minutes after her epidural was placed.",
+ b:"Spontaneous labor. Healthy. Epidural placed at 0110 with a test dose.",
+ a:"Pale, diaphoretic, yawning. Lying flat on her back. Good sensory block to T10.",
+ r:"Anesthesia just left the room. FHR changed after her BP fell.",
+ mon:[["FHR","110","minimal variability","hr"],["DECELS","late","x2","bp"],["UC","3","per 10 min","rr"],["BP","82/46","mmHg (was 124/76)","spo2"],["MHR","104","bpm","temp"]],
+ labs:[["Platelets","220 ×10³/µL",""],["Pre-epidural fluid bolus","500 mL given",""]],
+ meds:["Lactated Ringer's bolus PRN","Phenylephrine 100 mcg IV PRN SBP < 90 (anesthesia)","Ephedrine 5–10 mg IV PRN (anesthesia)","Ondansetron 4 mg IV PRN"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Sympathetic blockade and epidural hypotension",
+   stem:"Why did her blood pressure fall after the epidural?",
+   o:["She's having an allergic reaction to the local anesthetic.",
+      "The epidural blocks sympathetic nerves, so blood vessels dilate and blood pools in the legs; lying supine adds aortocaval compression, and less blood returns to the heart.",
+      "She's bleeding internally.",
+      "The epidural needle hit a blood vessel."],
+   c:1,why:"Local anesthetic blocks sympathetic fibers along with sensory ones, causing vasodilation and venous pooling. Lying flat lets the gravid uterus compress the vena cava. Preload and cardiac output fall, and so does uteroplacental perfusion, which explains the late decelerations."},
+  {cat:"Prioritization & Safety",topic:"First actions for maternal hypotension",
+   stem:"What do you do first?",
+   o:["Raise the head of the bed to 90 degrees.",
+      "Turn her to her side or displace the uterus, give a fluid bolus, and call anesthesia back.",
+      "Stop the epidural catheter and pull it out.",
+      "Give ondansetron and recheck in 30 minutes."],
+   c:1,why:"Lateral positioning relieves aortocaval compression and is the fastest way to improve venous return. A fluid bolus raises preload. Anesthesia needs to know right away and may give a vasopressor. Nausea and yawning are often early signs of low BP, so treat the cause."},
+  {cat:"Pharmacology",topic:"Vasopressors for neuraxial hypotension",
+   stem:"Anesthesia gives phenylephrine. What should you watch for?",
+   o:["Tachycardia",
+      "A reflex drop in maternal heart rate as BP rises",
+      "Uterine relaxation",
+      "Hyperglycemia"],
+   c:1,why:"Phenylephrine is an alpha-1 agonist that constricts vessels and raises BP. It's often preferred in obstetrics. The baroreceptor reflex can slow the maternal heart rate. Ephedrine, which also has beta effects, is used when the heart rate is low. Recheck BP every few minutes until it's stable, and watch the fetal tracing recover."}
+ ]},
+{id:"507",unit:"Labor & Delivery",name:"Carmen Silva",age:26,sex:"F",dx:"G2P1 at 39 weeks, group B strep positive",
+ s:"Water broke at home at 2330; contractions every 3 minutes.",
+ b:"GBS positive on 36-week culture. Says she \"broke out in a rash\" with amoxicillin as a child; no hives, swelling or trouble breathing.",
+ a:"Cervix 5 cm, 100% effaced, 0 station. Clear fluid. Afebrile.",
+ r:"Antibiotic prophylaxis ordered. Labor is moving quickly.",
+ mon:[["FHR","135","moderate variability","hr"],["DECELS","early","","bp"],["UC","3","per 10 min","rr"],["BP","116/70","mmHg","spo2"],["TEMP","37.0","°C","temp"]],
+ labs:[["GBS culture (36 wk)","positive","hi"],["Allergy","penicillin: childhood rash","hi"],["WBC","11.0 ×10³/µL",""]],
+ meds:["Penicillin G 5 million units IV, then 2.5–3 million units q4h","Cefazolin 2 g IV, then 1 g q8h (alternative)","Clindamycin IV (if high-risk allergy and susceptible)"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Why GBS colonization matters",
+   stem:"GBS doesn't make Carmen sick. Why does it matter?",
+   o:["It causes preterm labor in every case.",
+      "The newborn can be colonized during birth, and GBS is a leading cause of early-onset sepsis, pneumonia and meningitis in newborns.",
+      "It means she needs a cesarean birth.",
+      "It will cause her a severe postpartum infection."],
+   c:1,why:"About a quarter of pregnant people carry GBS in the vaginal or rectal flora without symptoms. During labor and birth the newborn can be colonized, and a small number develop early-onset GBS disease in the first week. Intrapartum antibiotics greatly reduce that risk. A cesarean isn't needed for GBS."},
+  {cat:"Pharmacology",topic:"Choosing GBS prophylaxis with a low-risk penicillin allergy",
+   stem:"Given her allergy history, which antibiotic is most appropriate?",
+   o:["No antibiotic; her allergy rules them all out.",
+      "Cefazolin, because a childhood rash without hives or anaphylaxis is a low-risk history",
+      "Oral amoxicillin",
+      "Vancomycin as the first choice"],
+   c:1,why:"For a low-risk penicillin allergy (a rash without hives, angioedema or breathing problems), cefazolin is recommended because it penetrates amniotic fluid well and cross-reactivity is low. Clindamycin or vancomycin is reserved for high-risk allergies such as anaphylaxis. Penicillin allergy testing is increasingly offered in pregnancy."},
+  {cat:"Prioritization & Safety",topic:"Adequate intrapartum GBS prophylaxis",
+   stem:"What makes her GBS prophylaxis \"adequate\" for the newborn?",
+   o:["Any single dose before birth",
+      "The first dose of an appropriate antibiotic given at least 4 hours before birth",
+      "Antibiotics given to the baby after birth",
+      "Starting antibiotics after the baby is born"],
+   c:1,why:"Prophylaxis is considered adequate when penicillin, ampicillin or cefazolin is started at least 4 hours before delivery. If labor is fast and that doesn't happen, the newborn may need closer observation or evaluation for sepsis. Start the first dose promptly and document the time, and tell the pediatric team if birth comes sooner."}
+ ]},
+{id:"508",unit:"Postpartum",name:"Hannah Kowalski",age:30,sex:"F",dx:"Postpartum day 1, Rh-negative mother",
+ s:"Asking what the \"special shot\" on her care plan is for.",
+ b:"G2P2. Blood type O negative, antibody screen negative. Received anti-D at 28 weeks. Baby is A positive.",
+ a:"Recovering well. Fundus firm at the umbilicus, lochia rubra moderate. Breastfeeding.",
+ r:"Rh immune globulin due before discharge. Rubella titer nonimmune.",
+ mon:[["HR","78","sinus","hr"],["BP","118/74","mmHg","bp"],["SpO₂","99%","room air","spo2"],["RR","16","/min","rr"],["TEMP","36.9","°C","temp"]],
+ labs:[["Maternal blood type","O negative","lo"],["Indirect Coombs","negative",""],["Newborn blood type","A positive",""],["Kleihauer-Betke","fetal cells within standard dose",""],["Rubella titer","nonimmune","lo"]],
+ meds:["Rh(D) immune globulin 300 mcg IM","MMR vaccine before discharge","Ibuprofen 600 mg PO q6h PRN"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Rh alloimmunization",
+   stem:"Why does an Rh-negative mother with an Rh-positive baby need Rh immune globulin?",
+   o:["To protect this baby from jaundice",
+      "Fetal Rh-positive cells entering her blood at birth can make her produce anti-D antibodies that would cross the placenta and destroy red cells of a future Rh-positive fetus.",
+      "To raise her own hemoglobin",
+      "Because Rh-negative blood clots poorly"],
+   c:1,why:"Fetomaternal hemorrhage at birth exposes the mother to fetal Rh(D) antigen. Her immune system can respond by making anti-D IgG, which crosses the placenta in later pregnancies and causes hemolytic disease of the fetus and newborn. Rh immune globulin clears fetal cells before her immune system responds. It doesn't help a mother who is already sensitized."},
+  {cat:"Pharmacology",topic:"Giving Rh immune globulin",
+   stem:"Which statement about her Rh immune globulin is correct?",
+   o:["Give it to the newborn within 24 hours.",
+      "Give it to the mother IM within 72 hours of birth because her baby is Rh positive and her antibody screen is negative.",
+      "It isn't needed because she had a dose at 28 weeks.",
+      "Give it only if she plans more children in the next year."],
+   c:1,why:"Rh immune globulin goes to the Rh-negative, unsensitized mother within 72 hours of birth of an Rh-positive infant. The 28-week dose doesn't cover the large exposure at birth. A Kleihauer-Betke test checks whether a larger fetomaternal bleed needs extra doses."},
+  {cat:"Prioritization & Safety",topic:"Rubella vaccine with Rh immune globulin",
+   stem:"She also needs the MMR vaccine because she's rubella nonimmune. Which teaching is correct?",
+   o:["\"You can't have MMR while breastfeeding.\"",
+      "\"Avoid getting pregnant for 4 weeks after the MMR. Because you're also getting Rh immune globulin, we'll recheck your rubella immunity later.\"",
+      "\"MMR and Rh immune globulin can never be given together.\"",
+      "\"MMR protects your baby right away.\""],
+   c:1,why:"MMR is a live vaccine, so pregnancy should be avoided for 4 weeks afterward. It's safe while breastfeeding. Both can be given postpartum, but immune globulin may blunt the vaccine response, so rubella immunity is rechecked later."}
+ ]},
+{id:"509",unit:"Postpartum",name:"Adaeze Obi",age:33,sex:"F",dx:"Post-cesarean day 2, suspected endometritis",
+ s:"Chills, aching belly, and \"the bleeding smells bad.\"",
+ b:"Cesarean after 22 hours of labor and 19 hours of ruptured membranes. Had chorioamnionitis in labor.",
+ a:"Uterine tenderness on palpation, foul-smelling lochia, incision clean. Breastfeeding every 2–3 hours.",
+ r:"Cultures drawn. Antibiotics ordered. She asks if she has to stop breastfeeding.",
+ mon:[["HR","114","sinus tach","hr"],["BP","108/64","mmHg","bp"],["SpO₂","98%","room air","spo2"],["RR","22","/min","rr"],["TEMP","38.9","°C","temp"]],
+ labs:[["WBC","19.8 ×10³/µL","hi"],["Lactate","1.8 mmol/L",""],["Blood cultures","pending",""],["Creatinine","0.7 mg/dL",""]],
+ meds:["Clindamycin 900 mg IV q8h","Gentamicin 5 mg/kg IV q24h (levels per pharmacy)","Acetaminophen 1 g PO q6h PRN","Ibuprofen 600 mg PO q6h"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Endometritis after cesarean birth",
+   stem:"Why was she at high risk for endometritis?",
+   o:["Breastfeeding introduces bacteria into the uterus.",
+      "Cesarean birth after long labor, prolonged rupture of membranes and chorioamnionitis lets vaginal bacteria ascend and infect the uterine lining.",
+      "She received too many antibiotics in labor.",
+      "Lochia is normally infected."],
+   c:1,why:"Endometritis is a polymicrobial infection of the decidua by bacteria from the lower genital tract. Cesarean birth is the biggest risk factor, especially after labor, long membrane rupture, many vaginal exams or intrapartum infection. Fever, uterine tenderness and foul lochia are the classic signs."},
+  {cat:"Pharmacology",topic:"Gentamicin monitoring",
+   stem:"She's on clindamycin and gentamicin. What must you monitor for the gentamicin?",
+   o:["Blood glucose",
+      "Kidney function, drug levels, and hearing or balance changes",
+      "Liver enzymes only",
+      "Nothing; it's safe at any dose."],
+   c:1,why:"Aminoglycosides like gentamicin can damage the kidneys and the inner ear. Monitor creatinine, urine output and drug levels, and report tinnitus, hearing loss or dizziness. Clindamycin covers anaerobes; report severe diarrhea because of C. difficile risk."},
+  {cat:"Prioritization & Safety",topic:"Breastfeeding during endometritis treatment",
+   stem:"She asks whether she has to stop breastfeeding. What is the best answer?",
+   o:["\"Yes, until the antibiotics are finished.\"",
+      "\"You can keep breastfeeding; the infection is in your uterus and these antibiotics are considered compatible. Tell us if the baby has diarrhea or thrush.\"",
+      "\"Pump and throw away your milk for a week.\"",
+      "\"Switch to formula permanently.\""],
+   c:1,why:"Endometritis isn't passed through breast milk, and clindamycin and gentamicin are generally compatible with breastfeeding. Small amounts in milk can change the infant's gut flora, so watch for diarrhea or thrush. Keeping up milk supply also supports bonding and recovery."}
+ ]},
+{id:"510",unit:"Postpartum",name:"Rachel Stein",age:28,sex:"F",dx:"Postpartum day 4, acute behavior change",
+ s:"Partner says she hasn't slept in 3 nights and is \"saying strange things.\"",
+ b:"Bipolar I disorder; stopped lithium early in pregnancy. Uncomplicated vaginal birth. Readmitted from home tonight.",
+ a:"Pacing, rapid speech, confused about the date. Says the baby \"isn't really hers\" and that she has to \"save him.\" Denies a plan when asked, but answers vaguely.",
+ r:"Newborn is in the room with the partner. Psychiatry consult requested.",
+ mon:[["HR","104","sinus tach","hr"],["BP","126/80","mmHg","bp"],["SpO₂","99%","room air","spo2"],["RR","20","/min","rr"],["TEMP","36.8","°C","temp"]],
+ labs:[["TSH","1.6 mIU/L",""],["Sodium","138 mEq/L",""],["Glucose","94 mg/dL",""],["Urine drug screen","negative",""]],
+ meds:["Psychiatry consult","1:1 observation","Medications per psychiatry"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Postpartum psychosis versus baby blues and depression",
+   stem:"Her partner asks if this is \"just the baby blues.\" What is the best explanation?",
+   o:["\"Yes, it's very common and goes away by itself in two weeks.\"",
+      "\"No. Baby blues is tearfulness and mood swings without confusion or false beliefs. Her confusion, sleeplessness and beliefs about the baby suggest postpartum psychosis, which is an emergency.\"",
+      "\"It's postpartum depression and can wait until her checkup.\"",
+      "\"It's normal exhaustion from a new baby.\""],
+   c:1,why:"Baby blues affects most new mothers in the first two weeks and resolves without treatment. Postpartum depression is longer and more severe. Postpartum psychosis usually begins in the first 1 to 2 weeks with insomnia, confusion, mania, hallucinations or delusions, often about the baby. It's a psychiatric emergency with a risk of suicide and infanticide."},
+  {cat:"Prioritization & Safety",topic:"Safety of mother and newborn in postpartum psychosis",
+   stem:"What is the priority right now?",
+   o:["Leave mother and baby alone to bond while you call psychiatry.",
+      "Ensure continuous observation, make sure she is never alone with the baby, ask directly about thoughts of harming herself or the baby, and notify the provider now.",
+      "Give her something to help her sleep and recheck in the morning.",
+      "Discharge her home with her partner and a follow-up appointment."],
+   c:1,why:"Her delusions about the baby raise the risk to both of them. Keep her under continuous observation, keep the newborn with another caregiver, and ask directly about suicidal thoughts and thoughts of harming the baby. Urgent psychiatric care, often inpatient, is needed, and treatment is effective."},
+  {cat:"Pathophysiology",topic:"Bipolar disorder as the major risk factor",
+   stem:"Which part of her history most raised her risk for postpartum psychosis?",
+   o:["It was her first vaginal birth.",
+      "Bipolar I disorder, especially after stopping her mood stabilizer",
+      "Breastfeeding",
+      "Her age"],
+   c:1,why:"A history of bipolar disorder, a previous postpartum psychosis, or a family history of it are the strongest risk factors. The sharp hormonal shifts after birth and sleep loss can trigger an episode. People with bipolar disorder need a perinatal mental health plan, including whether and when to restart medication."}
+ ]}
+];
+
+// Spread correct answers across A–D with a fixed, repeatable shuffle per question.
+CASES.forEach((c,ci)=>c.qs.forEach((q,qi)=>{
+  let a=(ci*97+qi*31+7)>>>0;const rnd=()=>{a=(a+0x6D2B79F5)>>>0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296};
+  const idx=[0,1,2,3];for(let i=3;i>0;i--){const j=Math.floor(rnd()*(i+1));[idx[i],idx[j]]=[idx[j],idx[i]]}
+  q.o=idx.map(i=>q.o[i]);q.c=idx.indexOf(q.c);
+}));
+
+const KEY="maternity-shift-v1";
+const CATS=["Pathophysiology","Pharmacology","Prioritization & Safety"];
+let state={cur:0,ans:{},name:"",view:"case"};
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&s.ans)state=Object.assign(state,s)}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const answers=c=>state.ans[c.id]||[];
+const isDone=c=>answers(c).length===c.qs.length;
+const caseScore=c=>answers(c).reduce((n,a,i)=>n+(a===c.qs[i].c?1:0),0);
+function stability(c){let s=55;answers(c).forEach((a,i)=>{s+=a===c.qs[i].c?15:-15});return Math.max(10,Math.min(100,s))}
+function stabTone(s){return s>=85?"ok":s>=55?"warn":"crit"}
+function totals(){let seen=0,score=0,answered=0;CASES.forEach(c=>{if(isDone(c))seen++;score+=caseScore(c);answered+=answers(c).length});return{seen,score,answered}}
+function clockFor(n){const m=19*60+Math.round(n*72);const h=Math.floor(m/60)%24,mm=m%60;return String(h).padStart(2,"0")+":"+String(mm).padStart(2,"0")}
+
+function renderHud(){const t=totals();$("#clock").textContent=clockFor(t.answered/3);$("#seen").textContent=t.seen+"/10";$("#score").textContent=t.score+"/30";
+  $("#reportBtn").disabled=t.seen<CASES.length;}
+
+function renderRooms(){
+  $("#rooms").innerHTML=CASES.map((c,i)=>{
+    const a=answers(c);let cls="dot";if(isDone(c))cls+=" s"+caseScore(c);else if(a.length)cls+=" prog";
+    const st=isDone(c)?caseScore(c)+"/3":a.length?"in progress":"not seen";
+    return `<button class="room" data-i="${i}" aria-current="${state.view==="case"&&state.cur===i}" aria-label="Room ${c.id}, ${esc(c.name)}, ${st}">
+      <span class="num">${c.id}</span><span class="who"><b>${esc(c.name)}</b><span>${esc(c.unit)}</span></span><span class="${cls}" title="${st}"></span></button>`}).join("");
+  document.querySelectorAll(".room").forEach(b=>b.onclick=()=>{state.cur=+b.dataset.i;state.view="case";save();render();window.scrollTo({top:0,behavior:"smooth"})});
+}
+
+function renderCase(){
+  const c=CASES[state.cur],a=answers(c),s=stability(c),tone=stabTone(s);
+  const labs=c.labs.map(l=>`<tr class="${l[2]?"flag "+l[2]:""}"><td>${esc(l[0])}</td><td>${esc(l[1])}</td></tr>`).join("");
+  let qhtml="";
+  c.qs.forEach((q,qi)=>{
+    if(qi>a.length)return;
+    const chosen=a[qi],answered=chosen!==undefined;
+    const opts=q.o.map((t,oi)=>{let cls="opt";if(answered){if(oi===q.c)cls+=" right";else if(oi===chosen)cls+=" wrong";else cls+=" dim"}
+      return `<button class="${cls}" data-q="${qi}" data-o="${oi}" ${answered?"disabled":""}><span class="k">${"ABCD"[oi]}</span><span>${esc(t)}</span></button>`}).join("");
+    let why="";
+    if(answered){const ok=chosen===q.c;
+      why=`<div class="why"><p class="verdict ${ok?"ok":"bad"}">${ok?"Correct. Patient stability improves.":"Not the best choice. The correct answer is "+"ABCD"[q.c]+"."}</p><p>${esc(q.why)}</p></div>`}
+    qhtml+=`<section class="q ${answered?"done-q":""}" aria-label="Decision ${qi+1}">
+      <div class="meta"><span class="tag">${esc(q.cat)}</span><span class="step">Decision ${qi+1} of 3</span><span class="time">${clockFor(state.cur+qi/3)}</span></div>
+      <p class="stem">${esc(q.stem)}</p><div class="opts">${opts}</div>${why}</section>`;
+  });
+  let outcome="";
+  if(isDone(c)){
+    const sc=caseScore(c);
+    const txt=sc===3?["Stable at handoff","Your decisions kept "+c.name.split(" ")[0]+" safe through the night. Day shift receives a clean handoff."]:
+      sc===2?["Guarded","One decision slowed recovery, but the patient is safe at 0700. Review the rationale you missed."]:
+      ["Deteriorating","The rapid response team was called overnight. Review each rationale before your next shift."];
+    const t=sc===3?"ok":sc===2?"warn":"crit";
+    const next=CASES.findIndex((x,i)=>i>state.cur&&!isDone(x)),anyNext=next>=0?next:CASES.findIndex(x=>!isDone(x));
+    outcome=`<div class="outcome ${t}"><h3>${txt[0]} · ${sc}/3</h3><p>${txt[1]}</p></div>
+      <div class="actions">${anyNext>=0?`<button class="btn primary" id="nextBtn" data-n="${anyNext}">Go to Room ${CASES[anyNext].id}</button>`:`<button class="btn primary" id="toReport">See end-of-shift report</button>`}
+      <button class="btn" id="redoBtn">Redo this patient</button></div>`;
+  }
+  $("#chart").innerHTML=`
+   <div class="pt-head"><span class="rm">${esc(c.unit.toUpperCase())} · ROOM ${c.id}</span><h2>${esc(c.name)}, ${c.age} ${c.sex}</h2><span class="dx">${esc(c.dx)}</span></div>
+   <div class="monitor" role="group" aria-label="Bedside monitor">${c.mon.map(m=>`<div class="vital v-${m[3]==="temp"?"t":m[3]}"><label>${esc(m[0])}</label><b>${esc(m[1])}</b><small>${esc(m[2])}</small></div>`).join("")}
+   </div>
+   <div class="box stab"><h3 style="margin:0">Patient stability</h3><div class="bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${s}" aria-label="Patient stability"><div class="fill" style="width:${s}%;background:var(--${tone==="ok"?"ok":tone==="warn"?"lamp":"crit"})"></div></div><span class="lbl">${s}</span>
+     <span class="pill ${a.length?tone:"mute"}">${!a.length?"Awaiting assessment":tone==="ok"?"Improving":tone==="warn"?"Watch closely":"Declining"}</span></div>
+   <div class="grid2">
+     <div class="box"><h3>SBAR handoff from evening shift</h3><dl class="sbar">
+       <dt>S</dt><dd>${esc(c.s)}</dd><dt>B</dt><dd>${esc(c.b)}</dd><dt>A</dt><dd>${esc(c.a)}</dd><dt>R</dt><dd>${esc(c.r)}</dd></dl></div>
+     <div class="box"><h3>Labs &amp; results</h3><table class="labs">${labs}</table><h3 style="margin-top:14px">Active orders</h3><ul class="meds">${c.meds.map(m=>`<li>${esc(m)}</li>`).join("")}</ul></div>
+   </div>
+   ${qhtml}${outcome}`;
+  document.querySelectorAll(".opt:not(:disabled)").forEach(b=>b.onclick=()=>{
+    const qi=+b.dataset.q,oi=+b.dataset.o;const arr=state.ans[c.id]||(state.ans[c.id]=[]);if(arr.length!==qi)return;arr.push(oi);save();render();
+    const qs=document.querySelectorAll(".q");const last=isDone(c)?document.querySelector(".outcome"):qs[qs.length-1];if(last)last.scrollIntoView({behavior:"smooth",block:"center"})});
+  const nb=$("#nextBtn");if(nb)nb.onclick=()=>{state.cur=+nb.dataset.n;save();render();window.scrollTo({top:0,behavior:"smooth"})};
+  const tr=$("#toReport");if(tr)tr.onclick=()=>{state.view="report";save();render();window.scrollTo({top:0})};
+  const rd=$("#redoBtn");if(rd)rd.onclick=()=>{delete state.ans[c.id];save();render()};
+}
+
+function reportText(){
+  const t=totals();const lines=[];
+  lines.push("CLINICAL ROUNDS: THE MATERNITY SHIFT — End-of-shift report");
+  lines.push("Student: "+(state.name||"(name not entered)"));
+  lines.push("Total: "+t.score+"/30 ("+Math.round(t.score/30*100)+"%)");
+  CATS.forEach(cat=>{let n=0,d=0;CASES.forEach(c=>c.qs.forEach((q,i)=>{if(q.cat===cat){d++;if(answers(c)[i]===q.c)n++}}));lines.push(cat+": "+n+"/"+d)});
+  lines.push("");
+  CASES.forEach(c=>lines.push("Room "+c.id+" "+c.name+" ("+c.dx+"): "+caseScore(c)+"/3"));
+  const miss=[];CASES.forEach(c=>c.qs.forEach((q,i)=>{if(answers(c)[i]!==q.c)miss.push("Rm "+c.id+": "+q.topic)}));
+  lines.push("");lines.push("Topics to review:");lines.push(miss.length?miss.map(m=>"- "+m).join("\n"):"- None. Full marks.");
+  return lines.join("\n");
+}
+
+function renderReport(){
+  const t=totals();const pct=Math.round(t.score/30*100);
+  const cats=CATS.map(cat=>{let n=0,d=0;CASES.forEach(c=>c.qs.forEach((q,i)=>{if(q.cat===cat){d++;if(answers(c)[i]===q.c)n++}}));
+    return `<div class="box cat"><h3>${esc(cat)}</h3><b>${n}/${d}</b><span>${Math.round(n/d*100)}% correct</span></div>`}).join("");
+  const rows=CASES.map(c=>{const sc=caseScore(c),tone=sc===3?"ok":sc===2?"warn":"crit",lab=sc===3?"Stable":sc===2?"Guarded":"Deteriorating";
+    return `<tr><td class="n">${c.id}</td><td>${esc(c.name)}</td><td>${esc(c.dx)}</td><td class="n">${sc}/3</td><td><span class="pill ${tone}">${lab}</span></td></tr>`}).join("");
+  const miss=[];CASES.forEach(c=>c.qs.forEach((q,i)=>{if(answers(c)[i]!==q.c)miss.push(`<li><b>Room ${c.id}:</b> ${esc(q.topic)}</li>`)}));
+  $("#chart").innerHTML=`<section class="report" style="display:flex;flex-direction:column;gap:16px">
+    <div><h2>End-of-shift report</h2><p class="sub">07:00 · ${t.score}/30 decisions correct (${pct}%)</p></div>
+    <div class="cats">${cats}</div>
+    <div class="box"><h3>Patients at handoff</h3><div class="tbl-wrap"><table class="rtbl"><thead><tr><th>Room</th><th>Patient</th><th>Diagnosis</th><th>Score</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+    <div class="box"><h3>Topics to review</h3>${miss.length?`<ul class="review">${miss.join("")}</ul>`:"<p>None. Every decision was correct.</p>"}</div>
+    <div class="box" style="display:flex;flex-direction:column;gap:10px"><h3>Submit to Canvas</h3>
+      <div class="field"><label for="stuName">Your name</label><input id="stuName" value="${esc(state.name)}" autocomplete="name"></div>
+      <textarea class="copytext" id="repText" readonly aria-label="Report text">${esc(reportText())}</textarea>
+      <div class="actions"><button class="btn primary" id="copyBtn">Copy report</button><button class="btn" id="backBtn">Back to the unit</button><span class="toast" id="toast" aria-live="polite"></span></div>
+      <p class="note">Paste the copied report into the Canvas assignment or discussion your instructor set up.</p></div>
+    <p class="note">Educational simulation for BSN students. Rationales reflect common evidence-based practice; always follow current institutional protocols and provider orders.</p>
+  </section>`;
+  $("#stuName").oninput=e=>{state.name=e.target.value;save();$("#repText").value=reportText()};
+  $("#copyBtn").onclick=()=>{const ta=$("#repText");const txt=ta.value;
+    const done=()=>{$("#toast").textContent="Copied"};
+    try{navigator.clipboard.writeText(txt).then(done,()=>{ta.focus();ta.select();$("#toast").textContent="Selected. Press Ctrl+C or ⌘C to copy."})}catch(e){ta.focus();ta.select();$("#toast").textContent="Selected. Press Ctrl+C or ⌘C to copy."}};
+  $("#backBtn").onclick=()=>{state.view="case";save();render()};
+}
+
+function render(){renderHud();renderRooms();if(state.view==="report"&&totals().seen===CASES.length)renderReport();else{state.view="case";renderCase()}}
+
+$("#reportBtn").onclick=()=>{state.view="report";save();render();window.scrollTo({top:0})};
+$("#resetBtn").onclick=()=>{const b=$("#resetBtn");if(b.dataset.armed){state={cur:0,ans:{},name:state.name,view:"case"};save();b.textContent="Start a new shift";delete b.dataset.armed;render()}else{b.dataset.armed="1";b.textContent="Tap again to clear progress";setTimeout(()=>{if(b.dataset.armed){delete b.dataset.armed;b.textContent="Start a new shift"}},4000)}};
+
+function start(data){if(data&&data.ans)state=Object.assign(state,data);else load();render()}
+window.claude?.hot?.snapshot?.(()=>state);
+window.claude?.hot?.ready?window.claude.hot.ready(start):start(window.claude?.hot?.data??{});
+</script>
+
+</body>
+</html>
